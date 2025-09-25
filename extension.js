@@ -2,6 +2,7 @@ import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 import GObject from 'gi://GObject';
 import St from 'gi://St';
+import Clutter from 'gi://Clutter';
 
 import { Extension } from 'resource:///org/gnome/shell/extensions/extension.js';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
@@ -170,24 +171,87 @@ const MaccyMenu = GObject.registerClass(
       const submenuItem = new PopupMenu.PopupSubMenuMenuItem(title);
       const recentItems = this._getRecentItems();
 
-      if (recentItems.length === 0) {
-        const placeholder = new PopupMenu.PopupMenuItem('No recent items');
-        placeholder.setSensitive(false);
-        submenuItem.menu.addMenuItem(placeholder);
-      } else {
-        recentItems.forEach(({ title: itemTitle, uri }) => {
-          const recentMenuItem = new PopupMenu.PopupMenuItem(itemTitle);
-          recentMenuItem.connect('activate', () => {
-            try {
-              const context = global.create_app_launch_context(0, -1);
-              Gio.AppInfo.launch_default_for_uri(uri, context);
-            } catch (error) {
-              logError(error, `Failed to open recent item: ${uri}`);
-            }
-          });
-          submenuItem.menu.addMenuItem(recentMenuItem);
+      // Only create and show the external menu on hover
+      let externalMenu = null;
+      let hoverCloseTimeout = 0;
+      let mainMenuCloseId = 0;
+
+      const cancelClose = () => {
+        if (hoverCloseTimeout) {
+          GLib.source_remove(hoverCloseTimeout);
+          hoverCloseTimeout = 0;
+        }
+      };
+
+      const closeAndDestroyMenu = () => {
+        cancelClose();
+        if (externalMenu) {
+          externalMenu.close();
+          externalMenu.destroy();
+          externalMenu = null;
+        }
+        if (mainMenuCloseId) {
+          this.menu.disconnect(mainMenuCloseId);
+          mainMenuCloseId = 0;
+        }
+      };
+
+      const closeLater = () => {
+        cancelClose();
+        hoverCloseTimeout = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 300, () => {
+          closeAndDestroyMenu();
+          return GLib.SOURCE_REMOVE;
         });
-      }
+      };
+
+      submenuItem.actor.connect('enter-event', (actor, event) => {
+        cancelClose();
+        if (!externalMenu) {
+          externalMenu = new PopupMenu.PopupMenu(submenuItem.actor, 0.0, St.Side.RIGHT);
+          externalMenu.setArrowOrigin(0.0);
+          externalMenu.actor.style = 'margin-left: 20px;';
+          Main.uiGroup.add_child(externalMenu.actor);
+          if (recentItems.length === 0) {
+            const placeholder = new PopupMenu.PopupMenuItem('No recent items');
+            placeholder.setSensitive(false);
+            externalMenu.addMenuItem(placeholder);
+          } else {
+            recentItems.forEach(({ title: itemTitle, uri }) => {
+              const recentMenuItem = new PopupMenu.PopupMenuItem(itemTitle);
+              recentMenuItem.connect('activate', () => {
+                try {
+                  const context = global.create_app_launch_context(0, -1);
+                  Gio.AppInfo.launch_default_for_uri(uri, context);
+                } catch (error) {
+                  logError(error, `Failed to open recent item: ${uri}`);
+                }
+              });
+              externalMenu.addMenuItem(recentMenuItem);
+            });
+          }
+          externalMenu.actor.connect('enter-event', () => {
+            cancelClose();
+            return Clutter.EVENT_PROPAGATE;
+          });
+          externalMenu.actor.connect('leave-event', () => {
+            closeLater();
+            return Clutter.EVENT_PROPAGATE;
+          });
+          mainMenuCloseId = this.menu.connect('open-state-changed', (_, open) => {
+            if (!open) closeAndDestroyMenu();
+          });
+          submenuItem.connect('destroy', closeAndDestroyMenu);
+        }
+        if (actor.get_stage() && externalMenu) {
+          externalMenu.open();
+        }
+        return Clutter.EVENT_PROPAGATE;
+      });
+
+      submenuItem.actor.connect('leave-event', (_actor, _event) => {
+        closeLater();
+        return Clutter.EVENT_PROPAGATE;
+      });
 
       this.menu.addMenuItem(submenuItem);
     }
