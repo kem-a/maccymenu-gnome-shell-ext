@@ -18,6 +18,8 @@ const RECENT_ITEMS_FILE = GLib.build_filenamev([
   GLib.get_user_data_dir(),
   'recently-used.xbel',
 ]);
+const HOVER_CLOSE_DELAY_MS = 200;
+const EXTERNAL_MENU_GAP_PX = 16;
 
 const MaccyMenu = GObject.registerClass(
   class MaccyMenu extends PanelMenu.Button {
@@ -168,89 +170,201 @@ const MaccyMenu = GObject.registerClass(
     }
 
     _makeExpandableMenu(title) {
-      const submenuItem = new PopupMenu.PopupSubMenuMenuItem(title);
-      const recentItems = this._getRecentItems();
+      const submenuItem = new PopupMenu.PopupBaseMenuItem({
+        reactive: true,
+        can_focus: true,
+        hover: true,
+      });
 
-      // Only create and show the external menu on hover
+      const label = new St.Label({
+        text: title,
+        x_expand: true,
+        y_align: Clutter.ActorAlign.CENTER,
+      });
+      submenuItem.add_child(label);
+
+      const arrowIcon = new St.Icon({
+        icon_name: 'go-next-symbolic',
+        style_class: 'popup-menu-arrow',
+        y_align: Clutter.ActorAlign.CENTER,
+      });
+      submenuItem.add_child(arrowIcon);
+
       let externalMenu = null;
-      let hoverCloseTimeout = 0;
+      let externalMenuSignalIds = [];
+      let hoverCloseTimeoutId = 0;
       let mainMenuCloseId = 0;
+      let submenuDestroyId = 0;
+      let chromeAdded = false;
+
+      const populateMenu = (menu) => {
+        menu.removeAll();
+
+        const recentItems = this._getRecentItems();
+        if (recentItems.length === 0) {
+          const placeholder = new PopupMenu.PopupMenuItem('No recent items');
+          placeholder.setSensitive(false);
+          menu.addMenuItem(placeholder);
+          return;
+        }
+
+        recentItems.forEach(({ title: itemTitle, uri }) => {
+          const recentMenuItem = new PopupMenu.PopupMenuItem(itemTitle);
+          recentMenuItem.connect('activate', () => {
+            try {
+              const context = global.create_app_launch_context(0, -1);
+              Gio.AppInfo.launch_default_for_uri(uri, context);
+            } catch (error) {
+              logError(error, `Failed to open recent item: ${uri}`);
+            }
+            this.menu.close(true);
+            closeAndDestroyMenu();
+          });
+          menu.addMenuItem(recentMenuItem);
+        });
+      };
 
       const cancelClose = () => {
-        if (hoverCloseTimeout) {
-          GLib.source_remove(hoverCloseTimeout);
-          hoverCloseTimeout = 0;
+        if (hoverCloseTimeoutId) {
+          GLib.source_remove(hoverCloseTimeoutId);
+          hoverCloseTimeoutId = 0;
         }
+      };
+
+      const scheduleClose = () => {
+        cancelClose();
+        hoverCloseTimeoutId = GLib.timeout_add(
+          GLib.PRIORITY_DEFAULT,
+          HOVER_CLOSE_DELAY_MS,
+          () => {
+            closeAndDestroyMenu();
+            return GLib.SOURCE_REMOVE;
+          }
+        );
+      };
+
+      const disconnectExternalMenuSignals = () => {
+        if (!externalMenu) {
+          return;
+        }
+
+        externalMenuSignalIds.forEach((id) => {
+          if (id) {
+            try {
+              externalMenu.actor.disconnect(id);
+            } catch (_error) {
+              // Ignore, signal already disconnected during teardown
+            }
+          }
+        });
+        externalMenuSignalIds = [];
+      };
+
+      const ensureExternalMenu = () => {
+        if (externalMenu) {
+          populateMenu(externalMenu);
+          return externalMenu;
+        }
+
+        externalMenu = new PopupMenu.PopupMenu(submenuItem.actor, 0.0, St.Side.RIGHT);
+        externalMenu.setArrowOrigin(0.0);
+        externalMenu.actor.add_style_class_name('maccy-external-menu');
+        if (externalMenu.actor.set_margin_left) {
+          externalMenu.actor.set_margin_left(EXTERNAL_MENU_GAP_PX);
+        } else {
+          externalMenu.actor.style = `margin-left: ${EXTERNAL_MENU_GAP_PX}px;`;
+        }
+        externalMenu.actor.translation_x = EXTERNAL_MENU_GAP_PX;
+        externalMenu.actor.track_hover = true;
+        externalMenu.actor.reactive = true;
+
+        Main.layoutManager.addTopChrome(externalMenu.actor);
+        chromeAdded = true;
+
+        populateMenu(externalMenu);
+
+        externalMenuSignalIds.push(
+          externalMenu.actor.connect('enter-event', () => {
+            cancelClose();
+            return Clutter.EVENT_PROPAGATE;
+          })
+        );
+        externalMenuSignalIds.push(
+          externalMenu.actor.connect('leave-event', () => {
+            scheduleClose();
+            return Clutter.EVENT_PROPAGATE;
+          })
+        );
+
+        if (mainMenuCloseId === 0) {
+          mainMenuCloseId = this.menu.connect('open-state-changed', (_, open) => {
+            if (!open) {
+              closeAndDestroyMenu();
+            }
+          });
+        }
+
+        if (submenuDestroyId === 0) {
+          submenuDestroyId = submenuItem.connect('destroy', () => {
+            closeAndDestroyMenu();
+          });
+        }
+
+        return externalMenu;
       };
 
       const closeAndDestroyMenu = () => {
         cancelClose();
-        if (externalMenu) {
-          externalMenu.close();
-          externalMenu.destroy();
-          externalMenu = null;
-        }
-        if (mainMenuCloseId) {
+
+        if (mainMenuCloseId !== 0) {
           this.menu.disconnect(mainMenuCloseId);
           mainMenuCloseId = 0;
         }
-      };
 
-      const closeLater = () => {
-        cancelClose();
-        hoverCloseTimeout = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 300, () => {
-          closeAndDestroyMenu();
-          return GLib.SOURCE_REMOVE;
-        });
-      };
-
-      submenuItem.actor.connect('enter-event', (actor, event) => {
-        cancelClose();
-        if (!externalMenu) {
-          externalMenu = new PopupMenu.PopupMenu(submenuItem.actor, 0.0, St.Side.RIGHT);
-          externalMenu.setArrowOrigin(0.0);
-          externalMenu.actor.style = 'margin-left: 20px;';
-          Main.uiGroup.add_child(externalMenu.actor);
-          if (recentItems.length === 0) {
-            const placeholder = new PopupMenu.PopupMenuItem('No recent items');
-            placeholder.setSensitive(false);
-            externalMenu.addMenuItem(placeholder);
-          } else {
-            recentItems.forEach(({ title: itemTitle, uri }) => {
-              const recentMenuItem = new PopupMenu.PopupMenuItem(itemTitle);
-              recentMenuItem.connect('activate', () => {
-                try {
-                  const context = global.create_app_launch_context(0, -1);
-                  Gio.AppInfo.launch_default_for_uri(uri, context);
-                } catch (error) {
-                  logError(error, `Failed to open recent item: ${uri}`);
-                }
-              });
-              externalMenu.addMenuItem(recentMenuItem);
-            });
+        if (submenuDestroyId !== 0) {
+          try {
+            submenuItem.disconnect(submenuDestroyId);
+          } catch (_error) {
+            // Signal was already disconnected, ignore
           }
-          externalMenu.actor.connect('enter-event', () => {
-            cancelClose();
-            return Clutter.EVENT_PROPAGATE;
-          });
-          externalMenu.actor.connect('leave-event', () => {
-            closeLater();
-            return Clutter.EVENT_PROPAGATE;
-          });
-          mainMenuCloseId = this.menu.connect('open-state-changed', (_, open) => {
-            if (!open) closeAndDestroyMenu();
-          });
-          submenuItem.connect('destroy', closeAndDestroyMenu);
+          submenuDestroyId = 0;
         }
-        if (actor.get_stage() && externalMenu) {
-          externalMenu.open();
+
+        if (externalMenu) {
+          disconnectExternalMenuSignals();
+          externalMenu.close(true);
+          if (chromeAdded) {
+            Main.layoutManager.removeChrome(externalMenu.actor);
+            chromeAdded = false;
+          }
+          externalMenu.destroy();
+          externalMenu = null;
         }
+      };
+
+      submenuItem.actor.connect('enter-event', () => {
+        cancelClose();
+        const menu = ensureExternalMenu();
+        menu.open(true);
         return Clutter.EVENT_PROPAGATE;
       });
 
-      submenuItem.actor.connect('leave-event', (_actor, _event) => {
-        closeLater();
+      submenuItem.actor.connect('leave-event', () => {
+        scheduleClose();
         return Clutter.EVENT_PROPAGATE;
+      });
+
+      submenuItem.actor.connect('button-press-event', () => {
+        cancelClose();
+        const menu = ensureExternalMenu();
+        menu.open(true);
+        return Clutter.EVENT_STOP;
+      });
+
+      submenuItem.connect('activate', () => {
+        cancelClose();
+        const menu = ensureExternalMenu();
+        menu.open(true);
       });
 
       this.menu.addMenuItem(submenuItem);
