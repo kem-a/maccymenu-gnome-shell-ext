@@ -31,12 +31,12 @@ export const GeneralPage = GObject.registerClass(
 
       const activityMenuSwitch = new Gtk.Switch({
         valign: Gtk.Align.CENTER,
-        active: this._settings.get_boolean('activity-menu-visibility'),
+        active: !this._settings.get_boolean('activity-menu-visibility'),
       });
 
       const activityMenuRow = new Adw.ActionRow({
-        title: 'Activity Menu',
-        subtitle: 'Change the visibility of the activity menu',
+        title: 'Hide Activities Menu',
+        subtitle: 'Toggle to hide the Activities menu button',
         activatable_widget: activityMenuSwitch,
       });
       activityMenuRow.add_suffix(activityMenuSwitch);
@@ -51,7 +51,7 @@ export const GeneralPage = GObject.registerClass(
       });
 
       activityMenuSwitch.connect('notify::active', (widget) => {
-        this._settings.set_boolean('activity-menu-visibility', widget.get_active());
+        this._settings.set_boolean('activity-menu-visibility', !widget.get_active());
       });
     }
   }

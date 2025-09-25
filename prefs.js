@@ -1,5 +1,4 @@
-import { ExtensionPreferences } from 'resource:///org/gnome/shell/extensions/prefs.js';
-
+import { ExtensionPreferences } from 'resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js';
 import { GeneralPage } from './preferences/generalPage.js';
 
 export default class MaccyMenuPreferences extends ExtensionPreferences {

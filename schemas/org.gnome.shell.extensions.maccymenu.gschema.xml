@@ -8,8 +8,8 @@
     </key>
     <key type="b" name="activity-menu-visibility">
       <default>false</default>
-      <summary>Activity Menu Visibility</summary>
-      <description>Activity Menu Visibility Status</description>
+      <summary>Hide Activity Menu</summary>
+      <description>Change Activity Menu Visibility Status</description>
     </key>
     <key type="i" name="prefs-default-width">
       <default>700</default>

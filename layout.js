@@ -2,20 +2,20 @@ export const LAYOUT = Object.freeze([
   {
     type: "menu",
     title: "About This PC",
-    cmds: ["gnome-control-center", "info-overview"],
+    cmds: ["gnome-control-center", "about"],
   },
   {
     type: "separator",
   },
   {
     type: "menu",
-    title: "System Preferences...",
+    title: "System Settings...",
     cmds: ["gnome-control-center"],
   },
   {
     type: "menu",
     title: "App Store...",
-    cmds: ["snap-store"],
+    cmds: ["gnome-software"],
   },
   {
     type: "separator",
@@ -55,7 +55,12 @@ export const LAYOUT = Object.freeze([
   },
   {
     type: "menu",
-    title: "Logout...",
+    title: "Lock Screen",
+    cmds: ["loginctl", "lock-session"],
+  },
+  {
+    type: "menu",
+    title: "Log Out...",
     cmds: ["gnome-session-quit", "--logout"],
   },
 ].map((item) => Object.freeze(item)));

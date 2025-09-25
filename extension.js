@@ -5,7 +5,7 @@ import St from 'gi://St';
 
 import { Extension } from 'resource:///org/gnome/shell/extensions/extension.js';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
-import { PanelMenu } from 'resource:///org/gnome/shell/ui/panelMenu.js';
+import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
 import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 import * as Util from 'resource:///org/gnome/shell/misc/util.js';
 
@@ -144,7 +144,7 @@ const MaccyMenu = GObject.registerClass(
       return LAYOUT.map((item) => {
         if (item.type === 'menu' && item.cmds?.includes('--logout')) {
           const title = fullName
-            ? `Logout ${fullName}...`
+            ? `Log Out ${fullName}...`
             : item.title;
           return {
             ...item,
