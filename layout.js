@@ -1,4 +1,4 @@
-var LAYOUT = [
+export const LAYOUT = Object.freeze([
   {
     type: "menu",
     title: "About This PC",
@@ -22,7 +22,7 @@ var LAYOUT = [
   },
   {
     type: "expandable-menu",
-    title: "Recent Items"
+    title: "Recent Items",
   },
   {
     type: "separator",
@@ -58,4 +58,4 @@ var LAYOUT = [
     title: "Logout...",
     cmds: ["gnome-session-quit", "--logout"],
   },
-];
+].map((item) => Object.freeze(item)));
