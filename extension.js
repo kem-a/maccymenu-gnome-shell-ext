@@ -169,13 +169,34 @@ const MaccyMenu = GObject.registerClass(
 
     _makeExpandableMenu(title) {
       const submenuItem = new PopupMenu.PopupSubMenuMenuItem(title);
-      const recentItems = this._getRecentItems();
+      submenuItem.menu.actor.add_style_class_name('maccymenu-recent-menu');
 
-      // Only create and show the external menu on hover
-      let externalMenu = null;
+      const populateMenu = () => {
+        submenuItem.menu.removeAll();
+
+        const recentItems = this._getRecentItems();
+        if (recentItems.length === 0) {
+          const placeholder = new PopupMenu.PopupMenuItem('No recent items');
+          placeholder.setSensitive(false);
+          submenuItem.menu.addMenuItem(placeholder);
+          return;
+        }
+
+        recentItems.forEach(({ title: itemTitle, uri }) => {
+          const recentMenuItem = new PopupMenu.PopupMenuItem(itemTitle);
+          recentMenuItem.connect('activate', () => {
+            try {
+              const context = global.create_app_launch_context(0, -1);
+              Gio.AppInfo.launch_default_for_uri(uri, context);
+            } catch (error) {
+              logError(error, `Failed to open recent item: ${uri}`);
+            }
+          });
+          submenuItem.menu.addMenuItem(recentMenuItem);
+        });
+      };
+
       let hoverCloseTimeout = 0;
-      let mainMenuCloseId = 0;
-
       const cancelClose = () => {
         if (hoverCloseTimeout) {
           GLib.source_remove(hoverCloseTimeout);
@@ -183,74 +204,58 @@ const MaccyMenu = GObject.registerClass(
         }
       };
 
-      const closeAndDestroyMenu = () => {
-        cancelClose();
-        if (externalMenu) {
-          externalMenu.close();
-          externalMenu.destroy();
-          externalMenu = null;
-        }
-        if (mainMenuCloseId) {
-          this.menu.disconnect(mainMenuCloseId);
-          mainMenuCloseId = 0;
-        }
-      };
-
       const closeLater = () => {
         cancelClose();
         hoverCloseTimeout = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 300, () => {
-          closeAndDestroyMenu();
+          submenuItem.setSubmenuShown(false);
           return GLib.SOURCE_REMOVE;
         });
       };
 
-      submenuItem.actor.connect('enter-event', (actor, event) => {
+      const mainMenuCloseId = this.menu.connect('open-state-changed', (_, open) => {
+        if (!open) {
+          cancelClose();
+          submenuItem.setSubmenuShown(false);
+        }
+      });
+
+      const submenuOpenId = submenuItem.menu.connect('open-state-changed', (_menu, isOpen) => {
+        if (isOpen) {
+          cancelClose();
+          populateMenu();
+        }
+      });
+
+      submenuItem.actor.connect('enter-event', () => {
         cancelClose();
-        if (!externalMenu) {
-          externalMenu = new PopupMenu.PopupMenu(submenuItem.actor, 0.0, St.Side.RIGHT);
-          externalMenu.setArrowOrigin(0.0);
-          externalMenu.actor.style = 'margin-left: 20px;';
-          Main.uiGroup.add_child(externalMenu.actor);
-          if (recentItems.length === 0) {
-            const placeholder = new PopupMenu.PopupMenuItem('No recent items');
-            placeholder.setSensitive(false);
-            externalMenu.addMenuItem(placeholder);
-          } else {
-            recentItems.forEach(({ title: itemTitle, uri }) => {
-              const recentMenuItem = new PopupMenu.PopupMenuItem(itemTitle);
-              recentMenuItem.connect('activate', () => {
-                try {
-                  const context = global.create_app_launch_context(0, -1);
-                  Gio.AppInfo.launch_default_for_uri(uri, context);
-                } catch (error) {
-                  logError(error, `Failed to open recent item: ${uri}`);
-                }
-              });
-              externalMenu.addMenuItem(recentMenuItem);
-            });
-          }
-          externalMenu.actor.connect('enter-event', () => {
-            cancelClose();
-            return Clutter.EVENT_PROPAGATE;
-          });
-          externalMenu.actor.connect('leave-event', () => {
-            closeLater();
-            return Clutter.EVENT_PROPAGATE;
-          });
-          mainMenuCloseId = this.menu.connect('open-state-changed', (_, open) => {
-            if (!open) closeAndDestroyMenu();
-          });
-          submenuItem.connect('destroy', closeAndDestroyMenu);
-        }
-        if (actor.get_stage() && externalMenu) {
-          externalMenu.open();
-        }
+        populateMenu();
+        submenuItem.setSubmenuShown(true);
         return Clutter.EVENT_PROPAGATE;
       });
 
-      submenuItem.actor.connect('leave-event', (_actor, _event) => {
+      submenuItem.actor.connect('leave-event', () => {
         closeLater();
         return Clutter.EVENT_PROPAGATE;
+      });
+
+      submenuItem.menu.actor.connect('enter-event', () => {
+        cancelClose();
+        return Clutter.EVENT_PROPAGATE;
+      });
+
+      submenuItem.menu.actor.connect('leave-event', () => {
+        closeLater();
+        return Clutter.EVENT_PROPAGATE;
+      });
+
+      submenuItem.connect('destroy', () => {
+        cancelClose();
+        if (mainMenuCloseId) {
+          this.menu.disconnect(mainMenuCloseId);
+        }
+        if (submenuOpenId) {
+          submenuItem.menu.disconnect(submenuOpenId);
+        }
       });
 
       this.menu.addMenuItem(submenuItem);
