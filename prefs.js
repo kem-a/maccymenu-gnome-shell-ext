@@ -1,33 +1,30 @@
-const { Adw, Gtk, Gdk } = imports.gi;
+import { ExtensionPreferences } from 'resource:///org/gnome/shell/extensions/prefs.js';
 
-const ExtensionUtils = imports.misc.extensionUtils;
-const Me = ExtensionUtils.getCurrentExtension();
+import { GeneralPage } from './preferences/generalPage.js';
 
-const GeneralPrefs = Me.imports.preferences.generalPage;
+export default class MaccyMenuPreferences extends ExtensionPreferences {
+  fillPreferencesWindow(window) {
+    const settings = this.getSettings();
 
-function init() {}
+    const generalPage = new GeneralPage(settings);
 
-function fillPreferencesWindow(window) {
-  const settings = ExtensionUtils.getSettings(Me.metadata["settings-schema"]);
+    const prefsWidth = settings.get_int('prefs-default-width');
+    const prefsHeight = settings.get_int('prefs-default-height');
 
-  const generalPage = new GeneralPrefs.GeneralPage(settings);
+    window.set_default_size(prefsWidth, prefsHeight);
+    window.set_search_enabled(true);
 
-  let prefsWidth = settings.get_int("prefs-default-width");
-  let prefsHeight = settings.get_int("prefs-default-height");
+    window.add(generalPage);
 
-  window.set_default_size(prefsWidth, prefsHeight);
-  window.set_search_enabled(true);
+    window.connect('close-request', () => {
+      const { default_width: currentWidth, default_height: currentHeight } = window;
 
-  window.add(generalPage);
+      if (currentWidth !== prefsWidth || currentHeight !== prefsHeight) {
+        settings.set_int('prefs-default-width', currentWidth);
+        settings.set_int('prefs-default-height', currentHeight);
+      }
 
-  window.connect("close-request", () => {
-    let currentWidth = window.default_width;
-    let currentHeight = window.default_height;
-
-    if (currentWidth != prefsWidth || currentHeight != prefsHeight) {
-      settings.set_int("prefs-default-width", currentWidth);
-      settings.set_int("prefs-default-height", currentHeight);
-    }
-    window.destroy();
-  });
+      window.destroy();
+    });
+  }
 }

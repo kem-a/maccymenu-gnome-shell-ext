@@ -1,4 +1,4 @@
-var ICONS = [
+export const ICONS = Object.freeze([
   {
     idx: 0,
     title: "Apple",
@@ -34,4 +34,4 @@ var ICONS = [
     title: "Kali",
     path: "/resources/icons/kali.svg",
   },
-];
+].map((icon) => Object.freeze(icon)));
