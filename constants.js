@@ -44,4 +44,9 @@ export const ICONS = Object.freeze([
     title: "OpenSUSE",
     path: "/resources/icons/opensuse-icon-symbolic.svg",
   },
+  {
+    idx: 9,
+    title: "Windows",
+    path: "/resources/icons/windows-icon-symbolic.svg",
+  },
 ].map((icon) => Object.freeze(icon)));
