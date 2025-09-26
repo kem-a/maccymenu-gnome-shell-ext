@@ -237,10 +237,23 @@ const MaccyMenu = GObject.registerClass(
           GLib.PRIORITY_DEFAULT,
           HOVER_CLOSE_DELAY_MS,
           () => {
+            const pointerRegion = getPointerRegion();
+
+            if (pointerRegion === PointerRegion.INSIDE) {
+              hoverCloseTimeoutId = 0;
+              return GLib.SOURCE_REMOVE;
+            }
+
+            if (pointerRegion === PointerRegion.BRIDGE) {
+              return GLib.SOURCE_CONTINUE;
+            }
+
+            hoverCloseTimeoutId = 0;
             closeAndDestroyMenu();
             return GLib.SOURCE_REMOVE;
           }
         );
+        GLib.Source.set_name_by_id(hoverCloseTimeoutId, 'maccyMenuHoverCloseDelay');
       };
 
       const disconnectExternalMenuSignals = () => {
@@ -311,6 +324,77 @@ const MaccyMenu = GObject.registerClass(
         }
 
         return externalMenu;
+      };
+
+      const PointerRegion = {
+        INSIDE: 0,
+        BRIDGE: 1,
+        OUTSIDE: 2,
+      };
+      const POINTER_TOLERANCE_PX = 8;
+
+      const getActorBounds = (actor) => {
+        if (!actor) {
+          return null;
+        }
+
+        const [stageX, stageY] = actor.get_transformed_position();
+        const [width, height] = actor.get_transformed_size();
+
+        if (width === 0 || height === 0) {
+          return null;
+        }
+
+        return {
+          x1: stageX,
+          y1: stageY,
+          x2: stageX + width,
+          y2: stageY + height,
+        };
+      };
+
+      const getPointerRegion = () => {
+        if (!externalMenu) {
+          return PointerRegion.OUTSIDE;
+        }
+
+        const [pointerX, pointerY] = global.get_pointer();
+        const submenuBounds = getActorBounds(submenuItem.actor);
+        const externalBounds = getActorBounds(externalMenu.actor);
+
+        const pointWithin = (bounds, tolerance = 0) =>
+          bounds &&
+          pointerX >= bounds.x1 - tolerance &&
+          pointerX <= bounds.x2 + tolerance &&
+          pointerY >= bounds.y1 - tolerance &&
+          pointerY <= bounds.y2 + tolerance;
+
+        if (
+          pointWithin(submenuBounds, POINTER_TOLERANCE_PX) ||
+          pointWithin(externalBounds, POINTER_TOLERANCE_PX)
+        ) {
+          return PointerRegion.INSIDE;
+        }
+
+        if (!submenuBounds || !externalBounds) {
+          return PointerRegion.OUTSIDE;
+        }
+
+        const bridgeX1 = Math.min(submenuBounds.x2, externalBounds.x1);
+        const bridgeX2 = Math.max(submenuBounds.x2, externalBounds.x1);
+        const bridgeY1 = Math.min(submenuBounds.y1, externalBounds.y1);
+        const bridgeY2 = Math.max(submenuBounds.y2, externalBounds.y2);
+
+        if (
+          pointerX >= bridgeX1 - POINTER_TOLERANCE_PX &&
+          pointerX <= bridgeX2 + POINTER_TOLERANCE_PX &&
+          pointerY >= bridgeY1 - POINTER_TOLERANCE_PX &&
+          pointerY <= bridgeY2 + POINTER_TOLERANCE_PX
+        ) {
+          return PointerRegion.BRIDGE;
+        }
+
+        return PointerRegion.OUTSIDE;
       };
 
       const closeAndDestroyMenu = () => {
